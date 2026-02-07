@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Credentials & Endpoints
 # Load from Environment Variables for safety
@@ -18,7 +21,9 @@ URL_MAP = f"{DASHBOARD_URL}?page=data-map-pelanggan-" # Coordinates
 IMG_BASE_URL = "https://e.ebilling.id:2096/img/ktp"
 
 # Request Headers
+# Request Headers
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": LOGIN_URL
+    "User-Agent": "curl/7.81.0",
+    "Accept": "*/*",
+    "Content-Type": "application/x-www-form-urlencoded"
 }

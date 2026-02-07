@@ -2,10 +2,12 @@ import requests
 import re
 import json
 import time
+import os
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
-from . import utils
+import config
+import utils
 
 class SkynetScraper:
     def __init__(self):
@@ -15,128 +17,151 @@ class SkynetScraper:
         self.coord_map = {} # Name -> {lat, lng}
 
     def login(self):
-        """Authenticate with the server."""
-        print("1. Logging in...")
+        """Authenticate with the server using curl (subprocess)."""
+        print("1. Logging in (via curl)...")
+        # Clear old cookies
+        if os.path.exists("cookies.txt"):
+            os.remove("cookies.txt")
+            
+        cmd = [
+            "curl", "-k", "-c", "cookies.txt", "-v",
+            "-d", f"account={config.ACCOUNT}&username={config.USERNAME}&password={config.PASSWORD}&btnLogin=Masuk&titik_lokasi=",
+            config.LOGIN_URL
+        ]
+        
         try:
-            self.session.get(config.LOGIN_URL, headers=config.HEADERS, verify=False)
-            payload = {
-                "account": config.ACCOUNT,
-                "username": config.USERNAME,
-                "password": config.PASSWORD,
-                "btnLogin": "",
-                "titik_lokasi": ""
-            }
-            res = self.session.post(config.LOGIN_URL, data=payload, headers=config.HEADERS, verify=False)
-            if "Logout" not in res.text and "Dashboard" not in res.text:
-                print("   [!] Login might have failed. Proceeding with caution.")
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            if os.path.exists("cookies.txt"):
+                print("   [+] Login command executed. Cookies saved.")
             else:
-                print("   [+] Login successful.")
+                print("   [!] Login failed: No cookies file created.")
         except Exception as e:
-            print(f"   [!] Login Error: {e}")
+            print(f"   [!] Login Execution Error: {e}")
 
     def fetch_master_data(self):
-        """Fetch and parse the main customer table (and Internal IDs)."""
-        print("2. Fetching Master Customer List...")
-        res = self.session.get(config.URL_LIST, headers=config.HEADERS, verify=False)
-        html = res.text
+        """Fetch customer list using curl and parse content."""
+        print("2. Fetching Master Customer List (via curl)...")
         
-        # Parse Rows
-        rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
-        print(f"   [+] Found {len(rows)} potential records (including headers).")
-
-        valid_count = 0
+        cmd = [
+            "curl", "-k", "-b", "cookies.txt", 
+            config.URL_LIST
+        ]
         
-        for row in rows:
-            # Columns
-            cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
-            if len(cols) < 10: 
-                continue
-
-            try:
-                # 1. Parse Basic Data
-                code = utils.clean_html_text(cols[1])
-                name = utils.clean_html_text(cols[2])
-                
-                if not code or "ID Pelanggan" in code: continue # Skip header
-
-                # 2. Extract Internal ID (Hidden in Row)
-                # Look for `id_warga=1234`
-                internal_id = ""
-                id_match = re.search(r'id_warga=(\d+)', row)
-                if id_match:
-                    internal_id = id_match.group(1)
-                    self.id_map[code] = internal_id
-
-                # 3. Parse Details
-                address = utils.clean_html_text(cols[3])
-                phone = utils.clean_html_text(cols[4])
-                nik = utils.clean_html_text(cols[5])
-                package = utils.clean_html_text(cols[6])
-                bandwidth = utils.clean_html_text(cols[7])
-                price = utils.parse_price(utils.clean_html_text(cols[8]))
-                
-                # Notes often contain Username: " , , USERNAME"
-                notes = utils.clean_html_text(cols[9])
-                pppoe_user = ""
-                parts = [p.strip() for p in notes.split(',')]
-                if len(parts) > 2:
-                    pppoe_user = parts[2]
-                elif len(parts) > 0 and parts[0]:
-                    pppoe_user = parts[0] # Fallback
-
-                join_date = utils.clean_html_text(cols[10])
-
-                # Build Object
-                cust = {
-                    "code": code,
-                    "internal_id": internal_id,
-                    "name": name,
-                    "address": address,
-                    "phone": phone,
-                    "nik": nik,
-                    "package": package,
-                    "bandwidth": bandwidth,
-                    "price": price,
-                    "connection_type": "PPPOE", # Assumed
-                    "pppoe_username": pppoe_user,
-                    "join_date": join_date,
-                    "status": "Active",
-                    "latitude": None,
-                    "longitude": None,
-                    "ktp_photo_url": ""
-                }
-                
-                self.customers.append(cust)
-                valid_count += 1
-
-            except Exception as e:
-                pass # Skip malformed rows safely
-
-        print(f"   [+] Successfully parsed {len(self.customers)} customers.")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            html = result.stdout
+            
+            # Parse Rows
+            # Regex might need adjustment if HTML structure changed slightly, but keeping original logic
+            rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
+            print(f"   [+] Found {len(rows)} potential records (including headers).")
+    
+            valid_count = 0
+            
+            for row in rows:
+                # Columns
+                cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                if len(cols) < 10: 
+                    continue
+    
+                try:
+                    # 1. Parse Basic Data
+                    code = utils.clean_html_text(cols[1])
+                    name = utils.clean_html_text(cols[2])
+                    
+                    if not code or "ID Pelanggan" in code: continue # Skip header
+    
+                    # 2. Extract Internal ID (Hidden in Row)
+                    # Look for `id_warga=1234`
+                    internal_id = ""
+                    id_match = re.search(r'id_warga=(\d+)', row)
+                    if id_match:
+                        internal_id = id_match.group(1)
+                        self.id_map[code] = internal_id
+    
+                    # 3. Parse Details
+                    address = utils.clean_html_text(cols[3])
+                    phone = utils.clean_html_text(cols[4])
+                    nik = utils.clean_html_text(cols[5])
+                    package = utils.clean_html_text(cols[6])
+                    bandwidth = utils.clean_html_text(cols[7])
+                    price = utils.parse_price(utils.clean_html_text(cols[8]))
+                    
+                    # Notes often contain Username: " , , USERNAME"
+                    notes = utils.clean_html_text(cols[9])
+                    pppoe_user = ""
+                    parts = [p.strip() for p in notes.split(',')]
+                    if len(parts) > 2:
+                        pppoe_user = parts[2]
+                    elif len(parts) > 0 and parts[0]:
+                        pppoe_user = parts[0] # Fallback
+    
+                    join_date = utils.clean_html_text(cols[10])
+    
+                    # Build Object
+                    cust = {
+                        "code": code,
+                        "internal_id": internal_id,
+                        "name": name,
+                        "address": address,
+                        "phone": phone,
+                        "nik": nik,
+                        "package": package,
+                        "bandwidth": bandwidth,
+                        "price": price,
+                        "connection_type": "PPPOE", # Assumed
+                        "pppoe_username": pppoe_user,
+                        "join_date": join_date,
+                        "status": "Active",
+                        "latitude": None,
+                        "longitude": None,
+                        "ktp_photo_url": ""
+                    }
+                    
+                    self.customers.append(cust)
+                    valid_count += 1
+    
+                except Exception as e:
+                    pass # Skip malformed rows safely
+    
+            print(f"   [+] Successfully parsed {len(self.customers)} customers.")
+            
+        except Exception as e:
+            print(f"   [!] Fetch Error: {e}")
 
     def fetch_coordinates(self):
-        """Fetch map page and extract JavaScript location data."""
-        print("3. Fetching Map Coordinates...")
-        res = self.session.get(config.URL_MAP, headers=config.HEADERS, verify=False)
-        html = res.text
+        """Fetch map page and extract JavaScript location data using curl."""
+        print("3. Fetching Map Coordinates (via curl)...")
         
-        # Regex to find `addMarkerAndInfoWindow` calls
-        # Matches: var locationData = "LAT,LNG"; ... Name ...
-        pattern = r'var locationData = "([^"]+)";.*?addMarkerAndInfoWindow.*?<td>Nama Pelanggan</td><td><b>" \+ "([^"]+)" \+ "</b>'
-        matches = re.findall(pattern, html, re.DOTALL)
+        cmd = [
+            "curl", "-k", "-b", "cookies.txt", 
+            config.URL_MAP
+        ]
         
-        print(f"   [+] Found {len(matches)} coordinate pairs in map script.")
-        
-        for latlng, raw_name in matches:
-            try:
-                lat, lng = latlng.split(',')
-                clean_name = raw_name.strip()
-                self.coord_map[clean_name] = {
-                    "lat": float(lat), 
-                    "lng": float(lng)
-                }
-            except:
-                continue
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            html = result.stdout
+            
+            # Regex to find `addMarkerAndInfoWindow` calls
+            # Matches: var locationData = "LAT,LNG"; ... Name ...
+            pattern = r'var locationData = "([^"]+)";.*?addMarkerAndInfoWindow.*?<td>Nama Pelanggan</td><td><b>" \+ "([^"]+)" \+ "</b>'
+            matches = re.findall(pattern, html, re.DOTALL)
+            
+            print(f"   [+] Found {len(matches)} coordinate pairs in map script.")
+            
+            for latlng, raw_name in matches:
+                try:
+                    lat, lng = latlng.split(',')
+                    clean_name = raw_name.strip()
+                    self.coord_map[clean_name] = {
+                        "lat": float(lat), 
+                        "lng": float(lng)
+                    }
+                except:
+                    continue
+        except Exception as e:
+             print(f"   [!] Map Fetch Error: {e}")
                 
     def enrich_data(self):
         """Merge ID maps, Coordinates, and Generate Photo URLs."""

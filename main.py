@@ -1,5 +1,5 @@
-from . import utils
-from .scraper import SkynetScraper
+import utils
+from scraper import SkynetScraper
 
 def main():
     print("=== SKYNET EBILLING SCRAPER ===")
