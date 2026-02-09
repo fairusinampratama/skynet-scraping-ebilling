@@ -16,6 +16,12 @@ DASHBOARD_URL = f"{BASE_URL}/index.php"
 # Page Endpoints
 URL_LIST = f"{DASHBOARD_URL}?page=data-kartu-warga"   # Main List
 URL_MAP = f"{DASHBOARD_URL}?page=data-map-pelanggan-" # Coordinates
+URL_TRANSACTIONS = f"{DASHBOARD_URL}?page=data-mutasi" # Transactions
+URL_AREA_LIST = f"{DASHBOARD_URL}?page=data-lokasi" # Area List
+URL_CABANG = f"{DASHBOARD_URL}?page=dashboard-cabang" # Dashboard Cabang
+URL_IPL = f"{DASHBOARD_URL}?page=data-ipl" # Data IPL
+# URL_WARGA_EXPORT = "https://e.ebilling.id/export/data_pelanggan_admin.php?&data_account=22778" # Data Warga (Export XLS) -> Moved to dedicated constant if needed or used directly
+URL_WARGA_EXPORT = "https://e.ebilling.id/export/data_pelanggan_admin.php?&data_account=22778"
 
 # Image Server
 IMG_BASE_URL = "https://e.ebilling.id:2096/img/ktp"
