@@ -1,20 +1,14 @@
 import requests
 import re
 import json
-import time
 import os
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
-
 import config
 import utils
 
 class SkynetScraper:
     def __init__(self):
         self.session = requests.Session()
-        self.customers = [] # List of dicts
-        self.id_map = {}    # Code -> Internal ID
-        self.coord_map = {} # Name -> {lat, lng}
 
     def login(self):
         """Authenticate with the server using curl (subprocess)."""
@@ -39,184 +33,195 @@ class SkynetScraper:
         except Exception as e:
             print(f"   [!] Login Execution Error: {e}")
 
-    def fetch_master_data(self):
-        """Fetch customer list using curl and parse content."""
-        print("2. Fetching Master Customer List (via curl)...")
-        
-        cmd = [
-            "curl", "-k", "-b", "cookies.txt", 
-            config.URL_LIST
-        ]
-        
+    def fetch_dashboard_cabang(self):
+        """Fetch Dashboard Cabang data."""
+        print("Fetching Dashboard Cabang...")
+        cmd = ["curl", "-k", "-b", "cookies.txt", config.URL_CABANG]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             html = result.stdout
             
-            # Parse Rows
-            # Regex might need adjustment if HTML structure changed slightly, but keeping original logic
+            # Parse Table #example1
+            # Columns: 0:Aksi, 1:No, 2:Cabang, 3:Jml Plg, 4:Baru, 5:Free, 6:Lunas, 7:Belum, 8:Masuk, 9:Keluar, 10:Balance...
             rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
-            print(f"   [+] Found {len(rows)} potential records (including headers).")
-    
-            valid_count = 0
-            
+            data = []
             for row in rows:
-                # Columns
                 cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
-                if len(cols) < 10: 
-                    continue
-    
+                if len(cols) < 10: continue
+                
                 try:
-                    # 1. Parse Basic Data
-                    code = utils.clean_html_text(cols[1])
-                    name = utils.clean_html_text(cols[2])
+                    cabang = utils.clean_html_text(cols[2])
+                    if not cabang or "Nama Cabang" in cabang: continue
                     
-                    if not code or "ID Pelanggan" in code: continue # Skip header
-    
-                    # 2. Extract Internal ID (Hidden in Row)
-                    # Look for `id_warga=1234`
-                    internal_id = ""
-                    id_match = re.search(r'id_warga=(\d+)', row)
-                    if id_match:
-                        internal_id = id_match.group(1)
-                        self.id_map[code] = internal_id
-    
-                    # 3. Parse Details
-                    address = utils.clean_html_text(cols[3])
-                    phone = utils.clean_html_text(cols[4])
-                    nik = utils.clean_html_text(cols[5])
-                    package = utils.clean_html_text(cols[6])
-                    bandwidth = utils.clean_html_text(cols[7])
-                    price = utils.parse_price(utils.clean_html_text(cols[8]))
-                    
-                    # Notes often contain Username: " , , USERNAME"
-                    notes = utils.clean_html_text(cols[9])
-                    pppoe_user = ""
-                    parts = [p.strip() for p in notes.split(',')]
-                    if len(parts) > 2:
-                        pppoe_user = parts[2]
-                    elif len(parts) > 0 and parts[0]:
-                        pppoe_user = parts[0] # Fallback
-    
-                    join_date = utils.clean_html_text(cols[10])
-    
-                    # Build Object
-                    cust = {
-                        "code": code,
-                        "internal_id": internal_id,
-                        "name": name,
-                        "address": address,
-                        "phone": phone,
-                        "nik": nik,
-                        "package": package,
-                        "bandwidth": bandwidth,
-                        "price": price,
-                        "connection_type": "PPPOE", # Assumed
-                        "pppoe_username": pppoe_user,
-                        "join_date": join_date,
-                        "status": "Active",
-                        "latitude": None,
-                        "longitude": None,
-                        "ktp_photo_url": ""
+                    record = {
+                        "cabang": cabang,
+                        "jumlah_pelanggan": utils.clean_html_text(cols[3]),
+                        "pelanggan_baru": utils.clean_html_text(cols[4]),
+                        "pelanggan_free": utils.clean_html_text(cols[5]),
+                        "pelanggan_lunas": utils.clean_html_text(cols[6]),
+                        "pelanggan_belum_lunas": utils.clean_html_text(cols[7]),
+                        "total_pemasukan": utils.parse_price(utils.clean_html_text(cols[8])),
+                        "total_pengeluaran": utils.parse_price(utils.clean_html_text(cols[9])),
+                        "balance": utils.parse_price(utils.clean_html_text(cols[10])),
+                        "total_estimasi": utils.parse_price(utils.clean_html_text(cols[14])) if len(cols) > 14 else 0
                     }
-                    
-                    self.customers.append(cust)
-                    valid_count += 1
-    
-                except Exception as e:
-                    pass # Skip malformed rows safely
-    
-            print(f"   [+] Successfully parsed {len(self.customers)} customers.")
+                    data.append(record)
+                except: pass
             
+            print(f"   [+] Parsed {len(data)} branch records.")
+            return data
         except Exception as e:
-            print(f"   [!] Fetch Error: {e}")
+            print(f"   [!] Error fetching cabang: {e}")
+            return []
 
-    def fetch_coordinates(self):
-        """Fetch map page and extract JavaScript location data using curl."""
-        print("3. Fetching Map Coordinates (via curl)...")
+    def fetch_data_ipl(self, year=None, month="Semua"):
+        """Fetch Data IPL (Payment) data.
         
-        cmd = [
-            "curl", "-k", "-b", "cookies.txt", 
-            config.URL_MAP
-        ]
+        Args:
+            year (str, optional): Year to filter (e.g., "2025"). Defaults to None (Current/Default View).
+            month (str, optional): Month to filter (e.g., "01" or "Semua"). Defaults to "Semua".
+        """
+        print(f"Fetching Data IPL for Year: {year}, Month: {month}...")
         
+        # Construct URL based on filter
+        # Default: config.URL_IPL
+        # Filtered: config.URL_IPL + "-&tahun={year}&bulan={month}"
+        # Note: The dash '-' after data-ipl is crucial for the filter to work.
+        url = config.URL_IPL
+        if year:
+            url = f"{config.URL_IPL}-&tahun={str(year)}&bulan={str(month)}"
+            
+        cmd = ["curl", "-k", "-b", "cookies.txt", url]
         try:
+            # Increase buffer limit conceptually by just reading stdout found
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             html = result.stdout
             
-            # Regex to find `addMarkerAndInfoWindow` calls
-            # Matches: var locationData = "LAT,LNG"; ... Name ...
-            pattern = r'var locationData = "([^"]+)";.*?addMarkerAndInfoWindow.*?<td>Nama Pelanggan</td><td><b>" \+ "([^"]+)" \+ "</b>'
-            matches = re.findall(pattern, html, re.DOTALL)
-            
-            print(f"   [+] Found {len(matches)} coordinate pairs in map script.")
-            
-            for latlng, raw_name in matches:
+            # Parse Table #example1
+            # Columns: 3:ID Plg, 4:Nama, 5:Alamat, 6:Harus Bayar, 7:Bayar, 8:Status, 9:Bukti, 10:Periode, 11:Metode...
+            rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
+            data = []
+            for row in rows:
+                cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                if len(cols) < 12: continue
+
                 try:
-                    lat, lng = latlng.split(',')
-                    clean_name = raw_name.strip()
-                    self.coord_map[clean_name] = {
-                        "lat": float(lat), 
-                        "lng": float(lng)
+                    id_pel = utils.clean_html_text(cols[3])
+                    if not id_pel or "ID Pelanggan" in id_pel: continue
+                    
+                    # Extract Proof URL from Col 9 (Bukti)
+                    proof_url = ""
+                    if len(cols) > 9:
+                        proof_match = re.search(r'src="([^"]+)"', cols[9])
+                        if proof_match:
+                            proof_url = proof_match.group(1)
+
+                    record = {
+                        "id_pelanggan": id_pel,
+                        "nama_pelanggan": utils.clean_html_text(cols[4]),
+                        "alamat": utils.clean_html_text(cols[5]),
+                        "nominal_harus_dibayar": utils.parse_price(utils.clean_html_text(cols[6])),
+                        "nominal_pembayaran": utils.parse_price(utils.clean_html_text(cols[7])),
+                        "status_pembayaran": utils.clean_html_text(cols[8]),
+                        "bukti_pembayaran_url": proof_url,
+                        "periode": utils.clean_html_text(cols[10]),
+                        "metode": utils.clean_html_text(cols[11]),
+                        "waktu_entry": utils.clean_html_text(cols[13]) if len(cols) > 13 else ""
                     }
-                except:
-                    continue
+                    data.append(record)
+                except: pass
+                
+            print(f"   [+] Parsed {len(data)} IPL records for {year}/{month}.")
+            return data
         except Exception as e:
-             print(f"   [!] Map Fetch Error: {e}")
-                
-    def enrich_data(self):
-        """Merge ID maps, Coordinates, and Generate Photo URLs."""
-        print("4. Enriching Data (Merging Coordinates & Generating URLs)...")
+            print(f"   [!] Error fetching IPL: {e}")
+            return []
+
+    def fetch_all_historical_transactions(self):
+        """Fetch all transaction data from 2021 to 2026."""
+        all_transactions = []
+        years = range(2021, 2027) # 2021 to 2026
         
-        for cust in self.customers:
-            name = cust['name']
-            
-            # 1. Merge Coordinates
-            if name in self.coord_map:
-                cust['latitude'] = self.coord_map[name]['lat']
-                cust['longitude'] = self.coord_map[name]['lng']
-            
-            # 2. Generate Photo URL
-            # Pattern: /img/ktp/{ACCOUNT}{INTERNAL_ID}.jpg
-            iid = cust.get('internal_id')
-            if iid:
-                cust['ktp_photo_url'] = f"{config.IMG_BASE_URL}/{config.ACCOUNT}{iid}.jpg"
-
-    def validate_photos(self):
-        """Check Photo URLs in parallel and remove 404s."""
-        print("5. Validating Photo URLs (Removing 404s)...")
+        print("Starting Historical Transaction Scraping (2021-2026)...")
         
-        def check_url(cust):
-            url = cust.get('ktp_photo_url')
-            if not url: return cust
+        for year in years:
+            # Use "Semua" to fetch the whole year at once
+            year_data = self.fetch_data_ipl(year=year, month="Semua")
+            all_transactions.extend(year_data)
             
-            try:
-                # Check JPG
-                res = requests.head(url, verify=False, timeout=5)
-                if res.status_code == 200:
-                    return cust
+        print(f"Total Transactions Scraped: {len(all_transactions)}")
+        return all_transactions
+
+    def fetch_data_warga(self):
+        """Fetch Data Warga via Export URL (HTML disguised as XLS)."""
+        print("Fetching Data Warga (Export)...")
+        # Download to file first due to size
+        temp_file = "temp_warga.html"
+        cmd = ["curl", "-k", "-b", "cookies.txt", "-o", temp_file, config.URL_WARGA_EXPORT]
+        try:
+            subprocess.run(cmd, check=True)
+            
+            with open(temp_file, "r", encoding="utf-8", errors="ignore") as f:
+                html = f.read()
+            
+            # Parse Table #example1
+            # Columns (Adjusted based on inspection):
+            # 3:ID Pel, 5:Nama, 9:Alamat, 10:Tlp, 15:Paket, 18:Harga, 26:Lokasi, 28:Router, 36:Koordinat
+            # 37: MAC, 38: IP/Secret, 39: Password Secret, 40: Nama Lokasi, 41: Jenis Koneksi, 42: Nama Router
+            rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
+            data = []
+            for row in rows:
+                cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                if len(cols) < 20: continue # Header or short row
+
+                try:
+                    id_pel = utils.clean_html_text(cols[3])
+                    if not id_pel or "ID Pelanggan" in id_pel: continue
+                    
+                    # Corrected Indices based on Header Analysis:
+                    # 25: IP/Secret, 26: Password Secret, 27: Nama Lokasi, 29: Nama Router, 35: Koordinat
+                    
+                    pppoe_user = utils.clean_html_text(cols[25]) if len(cols) > 25 else ""
+                    pppoe_pass = utils.clean_html_text(cols[26]) if len(cols) > 26 else ""
+                    nama_lokasi = utils.clean_html_text(cols[27]) if len(cols) > 27 else ""
+                    nama_router = utils.clean_html_text(cols[29]) if len(cols) > 29 else ""
+                    koordinat = utils.clean_html_text(cols[35]) if len(cols) > 35 else ""
+                    
+                    # Index 13 contains the KTP Photo URL directly
+                    ktp_url = ""
+                    if len(cols) > 13:
+                        raw_col_13 = cols[13]
+                        src_match = re.search(r'src="([^"]+)"', raw_col_13)
+                        if src_match:
+                            ktp_url = src_match.group(1)
+                        else:
+                            # Fallback to text content (stripped)
+                            ktp_url = utils.clean_html_text(raw_col_13)
+
+                    record = {
+                        "id_pelanggan": id_pel,
+                        "nama_pelanggan": utils.clean_html_text(cols[5]),
+                        "alamat": utils.clean_html_text(cols[9]),
+                        "telepon": utils.clean_html_text(cols[10]),
+                        "paket": utils.clean_html_text(cols[15]),
+                        "harga": utils.parse_price(utils.clean_html_text(cols[18])),
+                        "pppoe_username": pppoe_user,
+                        "pppoe_password": pppoe_pass,
+                        "nama_lokasi": nama_lokasi,
+                        "nama_router": nama_router,
+                        "koordinat": koordinat,
+                        "ktp_photo_url": ktp_url
+                    }
+                    data.append(record)
+                except: pass
+            
+            # Cleanup
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
                 
-                # Check PNG
-                url_png = url.replace(".jpg", ".png")
-                res = requests.head(url_png, verify=False, timeout=5)
-                if res.status_code == 200:
-                    cust['ktp_photo_url'] = url_png
-                    return cust
-            except:
-                pass
+            print(f"   [+] Parsed {len(data)} Warga records (Extended).")
+            return data
             
-            # If failed
-            cust['ktp_photo_url'] = "" 
-            return cust
-
-        # Parallel Execution
-        with ThreadPoolExecutor(max_workers=50) as executor:
-            self.customers = list(executor.map(check_url, self.customers))
-            
-        # Count stats
-        valid = sum(1 for c in self.customers if c['ktp_photo_url'])
-        print(f"   [+] Photo Validation Complete: {valid} valid images found.")
-
-    def save_results(self, filename="full_customer_data.json"):
-        with open(filename, "w") as f:
-            json.dump(self.customers, f, indent=4)
-        print(f"6. Data Saved to {filename}")
+        except Exception as e:
+            print(f"   [!] Error fetching Warga: {e}")
+            return []

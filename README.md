@@ -1,57 +1,60 @@
-# Skynet e-Billing Scraper
+# Skynet Migration Data
 
-A robust Python tool designed to scrape, aggregate, and enrich customer data from the Skynet e-Billing dashboard.
+This folder contains the cleaned data extracted from the legacy e-billing system, ready for import into the new database.
 
-## Features
-- **Master Data Scraping**: Extracts full customer list from the main dashboard table.
-- **Coordinate Recovery**: Parses hidden Google Maps JavaScript blobs to valid Latitude/Longitude coordinates.
-- **Photo Enrichment**: Generates valid KTP photo URLs by fuzzing and verifying paths against the server.
-- **Data Validation**: Automatically merges data and cleans up broken links.
+## 📂 File Structure
 
-## Prerequisites
-- Python 3.8+
-- An active account on the e-Billing dashboard.
+- `customers.json`: The master customer list (from "Data Warga" export).
+- `transactions.json`: Payment history (from "Data IPL").
+- `branches.json`: Branch financial summaries (from "Dashboard Cabang").
 
-## Installation
+## 🔄 Mapping Guide for Migration
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/skynet_scraping_ebilling.git
-   cd skynet_scraping_ebilling
-   ```
+### 1. Table: `customers`
+Source: `customers.json`
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+| Destination Column | Source JSON Key | Notes |
+| :--- | :--- | :--- |
+| `id` | `id_pelanggan` | Primary Key (String/Char) |
+| `name` | `nama_pelanggan` | |
+| `address` | `alamat` | |
+| `phone_number` | `telepon` | |
+| `coordinates` | `koordinat` | Format: "lat,lng" (Needs splitting) |
+| `pppoe_username` | `pppoe_username` | |
+| `pppoe_password` | `pppoe_password` | **Warning**: Often empty in source. |
+| `identity_card_photo_path` | `ktp_photo_url` | URL needs downloading if storing locally. |
 
-3. Configure Environment:
-   Copy `.env.example` to `.env` and fill in your credentials.
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Edit `.env`:
-   ```ini
-   SKYNET_USER=your_username
-   SKYNET_PASS=your_password
-   SKYNET_ACCT=your_account_id
-   ```
+### 2. Table: `packages`
+Source: `customers.json` (Derived)
 
-## Usage
+- Extract unique `paket` values from `customers.json`.
+- Map `paket` name AND `harga`.
+- Create new records in `packages` table.
 
-Run the main script to start the scraping pipeline:
+### 3. Table: `routers`
+Source: `customers.json` (Derived)
+
+- Extract unique `nama_router` values.
+- **Action Required**: You must manually update the `routers` table with IP Address, Username, and Password for each router name found (e.g., "SKYNET-SRIGADING").
+
+### 4. Table: `invoices` & `transactions`
+Source: `transactions.json`
+
+| Destination Column | Source JSON Key | Notes |
+| :--- | :--- | :--- |
+| `customer_id` | `id_pelanggan` | Foreign Key |
+| `period` | `periode` | e.g., "February 2026" |
+| `amount` | `nominal_harus_dibayar` | |
+| `status` | `status_pembayaran` | "Lunas" -> "paid" |
+| `payment_method` | `metode` | |
+| `proof_of_payment` | `bukti_pembayaran_url` | |
+
+## 🚀 How to Run the Export
+
+To regenerate these files:
 
 ```bash
-python3 -m skynet_scraping_ebilling.main
+python3 export_data.py
 ```
 
-The script will:
-1. Login to the dashboard.
-2. Scrape the master customer list.
-3. Fetch map data and link coordinates to customers.
-4. Generate and validate KTP photo URLs.
-5. Save the final output to `final_customer_data.json`.
-
-## Disclaimer
-This tool is for educational and authorized administrative use only. Ensure you have permission to scrape the target dashboard.
+This will fetch the latest data and overwrite the files in the `migration_data/` folder.
