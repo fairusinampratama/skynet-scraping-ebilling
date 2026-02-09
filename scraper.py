@@ -179,7 +179,11 @@ class SkynetScraper:
                     if not id_pel or "ID Pelanggan" in id_pel: continue
                     
                     # Corrected Indices based on Header Analysis:
+                    # 4: Tanggal Registrasi, 22: Jatuh Tempo
                     # 25: IP/Secret, 26: Password Secret, 27: Nama Lokasi, 29: Nama Router, 35: Koordinat
+                    
+                    tanggal_registrasi = utils.clean_html_text(cols[4]) if len(cols) > 4 else ""
+                    jatuh_tempo = utils.clean_html_text(cols[22]) if len(cols) > 22 else ""
                     
                     pppoe_user = utils.clean_html_text(cols[25]) if len(cols) > 25 else ""
                     pppoe_pass = utils.clean_html_text(cols[26]) if len(cols) > 26 else ""
@@ -205,6 +209,8 @@ class SkynetScraper:
                         "telepon": utils.clean_html_text(cols[10]),
                         "paket": utils.clean_html_text(cols[15]),
                         "harga": utils.parse_price(utils.clean_html_text(cols[18])),
+                        "tanggal_registrasi": tanggal_registrasi,
+                        "jatuh_tempo": jatuh_tempo,
                         "pppoe_username": pppoe_user,
                         "pppoe_password": pppoe_pass,
                         "nama_lokasi": nama_lokasi,
@@ -225,3 +231,70 @@ class SkynetScraper:
         except Exception as e:
             print(f"   [!] Error fetching Warga: {e}")
             return []
+
+    def fetch_customer_status(self):
+        """Fetch Customer Connection Status (Active/Isolated).
+        
+        This requires a two-step process:
+        1. Fetch 'data-status-langganan' to find the dynamic AJAX URL (contains account ID).
+        2. Fetch the JSON data from that AJAX URL.
+        """
+        print("Fetching Customer Status...")
+        
+        # Step 1: Get the dynamic ID
+        status_page_url = f"{config.DASHBOARD_URL}?page=data-status-langganan"
+        cmd = ["curl", "-k", "-b", "cookies.txt", status_page_url]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            html = result.stdout
+            
+            # Look for "getData_langganan.php?nilai=XXXX"
+            match = re.search(r'getData_langganan\.php\?nilai=(\d+)', html)
+            if not match:
+                print("   [!] Could not find dynamic AJAX URL for status.")
+                return {}
+            
+            account_id = match.group(1)
+            print(f"   [+] Found Account ID for Status: {account_id}")
+            
+            # Step 2: Fetch JSON Data
+            # Note: BASE_URL already includes /billing
+            json_url = f"{config.BASE_URL}/getData_langganan.php?nilai={account_id}"
+            cmd_json = ["curl", "-k", "-b", "cookies.txt", json_url]
+            
+            result_json = subprocess.run(cmd_json, capture_output=True, text=True, check=True)
+            try:
+                data = json.loads(result_json.stdout)
+                
+                # Parse JSON
+                # Structure: {"data": [[col0, col1, ...], ...]}
+                # Index 2: ID Pelanggan
+                # Index 14: Status HTML (e.g., <i class="...">On </i> or <i ...>Off </i>)
+                
+                status_map = {}
+                for row in data.get("data", []):
+                    if len(row) > 14:
+                        id_pel = row[2]
+                        status_html = row[14]
+                        
+                        # Extract "On" or "Off" from HTML
+                        # Example: <i  class="btn btn-success btn-sm" class="fas fa-lock">On  </i>
+                        status_text = "Unknown"
+                        if "On" in status_html:
+                            status_text = "Active"
+                        elif "Off" in status_html or "Isolir" in status_html:
+                            status_text = "Isolated"
+                        
+                        status_map[id_pel] = status_text
+                
+                print(f"   [+] Parsed status for {len(status_map)} customers.")
+                return status_map
+                
+            except json.JSONDecodeError:
+                print("   [!] Failed to parse Status JSON.")
+                return {}
+                
+        except Exception as e:
+            print(f"   [!] Error fetching status: {e}")
+            return {}

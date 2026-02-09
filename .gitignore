@@ -6,5 +6,5 @@ final_customer_data.json
 cookies.txt
 *.html
 *.xls
-# migration_data/*.json
-# migration_data/
+migration_data/*.json
+migration_data/

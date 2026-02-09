@@ -4,9 +4,11 @@ This folder contains the cleaned data extracted from the legacy e-billing system
 
 ## 📂 File Structure
 
-- `customers.json`: The master customer list (from "Data Warga" export).
-- `transactions.json`: Payment history (from "Data IPL").
-- `branches.json`: Branch financial summaries (from "Dashboard Cabang").
+- **`customers_final.json`**: **USE THIS FOR IMPORT** - Final cleaned data (1,743 records, sanitized coordinates)
+- `customers_clean.json`: Deduplicated but with unsanitized coordinates
+- `customers.json`: Original export with duplicates
+- `transactions.json`: Payment history (from "Data IPL")
+- `branches.json`: Branch financial summaries (from "Dashboard Cabang")
 
 ## 🔄 Mapping Guide for Migration
 
@@ -23,6 +25,9 @@ Source: `customers.json`
 | `pppoe_username` | `pppoe_username` | |
 | `pppoe_password` | `pppoe_password` | **Warning**: Often empty in source. |
 | `identity_card_photo_path` | `ktp_photo_url` | URL needs downloading if storing locally. |
+| `is_active` | `connection_status` | "Active" -> true, "Isolated" -> false |
+| `registered_at` | `tanggal_registrasi` | Registration date (e.g., "01-February-2026") |
+| `billing_day` | `jatuh_tempo` | Day of month for bill due date (e.g., "30") |
 
 ### 2. Table: `packages`
 Source: `customers.json` (Derived)
