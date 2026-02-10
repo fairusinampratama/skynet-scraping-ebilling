@@ -185,6 +185,9 @@ class SkynetScraper:
                     tanggal_registrasi = utils.clean_html_text(cols[4]) if len(cols) > 4 else ""
                     jatuh_tempo = utils.clean_html_text(cols[22]) if len(cols) > 22 else ""
                     
+                    nik = utils.clean_html_text(cols[12]) if len(cols) > 12 else ""
+                    kk = "" 
+                    
                     pppoe_user = utils.clean_html_text(cols[25]) if len(cols) > 25 else ""
                     pppoe_pass = utils.clean_html_text(cols[26]) if len(cols) > 26 else ""
                     nama_lokasi = utils.clean_html_text(cols[27]) if len(cols) > 27 else ""
@@ -205,6 +208,8 @@ class SkynetScraper:
                     record = {
                         "id_pelanggan": id_pel,
                         "nama_pelanggan": utils.clean_html_text(cols[5]),
+                        "nik": nik,
+                        "kk": kk,
                         "alamat": utils.clean_html_text(cols[9]),
                         "telepon": utils.clean_html_text(cols[10]),
                         "paket": utils.clean_html_text(cols[15]),

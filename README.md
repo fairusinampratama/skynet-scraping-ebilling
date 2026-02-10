@@ -21,6 +21,8 @@ Source: `customers.json`
 | `name` | `nama_pelanggan` | |
 | `address` | `alamat` | |
 | `phone_number` | `telepon` | |
+| `nik` | `nik` | National Identity Number |
+| `kk` | `kk` | Family Card Number |
 | `coordinates` | `koordinat` | Format: "lat,lng" (Needs splitting) |
 | `pppoe_username` | `pppoe_username` | |
 | `pppoe_password` | `pppoe_password` | **Warning**: Often empty in source. |
