@@ -168,11 +168,22 @@ def run_sync():
         db.commit()
         sync_log.customers_synced = len(warga_data)
 
-        # 2. Fetch Invoices (We'll only do current year to limit strain)
-        # Assuming we just need the most recent ones for syncing.
-        # prd.md specifies current month, let's fetch current year for safety
+        # 2. Fetch Invoices (We'll only do current year to limit strain, unless BACKFILL_YEARS is set)
+        import os
+        backfill_str = os.environ.get("BACKFILL_YEARS", "")
+        years_to_sync = []
+        if backfill_str:
+            years_to_sync = [int(y.strip()) for y in backfill_str.split(",") if y.strip().isdigit()]
+        
         curr_year = datetime.now().year
-        ipl_data = scraper.fetch_data_ipl(year=curr_year)
+        if curr_year not in years_to_sync:
+            years_to_sync.append(curr_year)
+            
+        ipl_data = []
+        for y in years_to_sync:
+            logger.info(f"Fetching IPL data for year {y}...")
+            year_data = scraper.fetch_data_ipl(year=y)
+            ipl_data.extend(year_data)
         
         logger.info(f"Normalizing Data IPL (count: {len(ipl_data)})...")
         for i_data in ipl_data:
