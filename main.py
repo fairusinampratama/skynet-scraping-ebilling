@@ -8,13 +8,45 @@ from models import Area, Package, Customer, Invoice, Branch, SyncLog
 import sync
 
 import logging
+from contextlib import asynccontextmanager
+from apscheduler.schedulers.background import BackgroundScheduler
 
 logger = logging.getLogger("api")
 
 # Create tables if not exist (mostly for local sqlite testing)
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="eBilling Scraper API", version="1.0.0")
+def scheduled_sync_job():
+    logger.info("Running scheduled eBilling sync job...")
+    try:
+        sync.run_sync()
+    except Exception as e:
+        logger.error(f"Scheduled sync failed: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Setup background scheduler
+    scheduler = BackgroundScheduler()
+    scrape_hour = int(os.environ.get("SCRAPE_HOUR", 0))  # Default: Midnight
+    
+    scheduler.add_job(
+        scheduled_sync_job,
+        'cron',
+        hour=scrape_hour,
+        minute=0,
+        id='nightly_ebilling_sync',
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info(f"APScheduler started. Nightly sync scheduled at hour {scrape_hour:02d}:00.")
+    
+    yield
+    
+    # Shutdown scheduler
+    scheduler.shutdown()
+    logger.info("APScheduler stopped.")
+
+app = FastAPI(title="eBilling Scraper API", version="1.0.0", lifespan=lifespan)
 
 ADMIN_API_KEY = os.environ.get("API_KEY", "secret-key-123")
 
