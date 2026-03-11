@@ -96,7 +96,7 @@ class SkynetScraper:
         logger.info(f"Fetching Data IPL for Year: {year}, Month: {month}...")
         url = config.URL_IPL
         if year:
-            url = f"{config.URL_IPL}-&tahun={str(year)}&bulan={str(month)}"
+            url = f"{config.URL_IPL}&tahun={str(year)}&bulan={str(month)}"
             
         try:
             res = self.session.get(url, verify=False)
