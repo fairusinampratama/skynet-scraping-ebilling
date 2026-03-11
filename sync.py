@@ -186,15 +186,25 @@ def run_sync():
             ipl_data.extend(year_data)
         
         logger.info(f"Normalizing Data IPL (count: {len(ipl_data)})...")
+        # To handle massive backfills properly, we keep track of what we've seen in the loop
+        # so we don't try to add duplicates that haven't been committed to the DB yet.
+        added_invoices = {}
+        
         for i_data in ipl_data:
             c_id = i_data.get("id_pelanggan")
             period_str = i_data.get("periode")
             
-            # We attempt to deduplicate invoices by customer_id and period
             period_date = parse_period_to_date(period_str)
+            if not period_date or not c_id:
+                continue
+                
+            dict_key = f"{c_id}_{period_date}"
             
-            inv = None
-            if period_date and c_id:
+            # Check local dictionary first
+            inv = added_invoices.get(dict_key)
+            
+            # If not in local dict, check DB
+            if not inv:
                 inv = db.query(Invoice).filter(
                     Invoice.customer_id == c_id,
                     Invoice.period == period_date
@@ -206,28 +216,25 @@ def run_sync():
                 inv.customer_id = c_id
                 inv.period = period_date
                 
-                # Generate pseudo-code if missing
-                yyyymm = period_date.strftime("%Y%m") if period_date else "000000"
+                yyyymm = period_date.strftime("%Y%m")
                 inv.code = f"INV-{yyyymm}-{c_id}"
                 db.add(inv)
+                added_invoices[dict_key] = inv # Track it so we don't add it again in this loop
                 
             inv.amount = i_data.get("nominal_harus_dibayar", 0)
             status_raw = i_data.get("status_pembayaran", "").lower()
             inv.status = "paid" if "lunas" in status_raw else "unpaid"
             
-            # Simple Due Date approximation (using Customer's due_day or 20)
-            db.flush()
             due_day = 20
-            # Get customer due day directly from DB
+            # To avoid slow queries inside the loop, we could pre-fetch, but for now we query
             cust_ref = db.query(Customer).filter(Customer.id == c_id).first()
             if cust_ref and cust_ref.due_day:
                 due_day = cust_ref.due_day
                 
-            if period_date:
-                try:
-                    inv.due_date = period_date.replace(day=due_day)
-                except ValueError:
-                    inv.due_date = period_date # fallback if day is invalid for month
+            try:
+                inv.due_date = period_date.replace(day=due_day)
+            except ValueError:
+                inv.due_date = period_date 
                 
             inv.payment_link = i_data.get("bukti_pembayaran_url")
             inv.last_synced_at = datetime.utcnow()
