@@ -186,9 +186,9 @@ def run_sync():
             ipl_data.extend(year_data)
         
         logger.info(f"Normalizing Data IPL (count: {len(ipl_data)})...")
-        # To handle massive backfills properly, we keep track of what we've seen in the loop
-        # so we don't try to add duplicates that haven't been committed to the DB yet.
-        added_invoices = {}
+        
+        # Pre-load existing customers to prevent foreign key errors from deleted accounts
+        valid_customers = {c[0] for c in db.query(Customer.id).all()}
         
         for i_data in ipl_data:
             c_id = i_data.get("id_pelanggan")
@@ -198,17 +198,24 @@ def run_sync():
             if not period_date or not c_id:
                 continue
                 
-            dict_key = f"{c_id}_{period_date}"
-            
-            # Check local dictionary first
-            inv = added_invoices.get(dict_key)
-            
-            # If not in local dict, check DB
-            if not inv:
-                inv = db.query(Invoice).filter(
-                    Invoice.customer_id == c_id,
-                    Invoice.period == period_date
-                ).first()
+            # Handle orphaned invoices (deleted customers) by inserting a stub
+            if c_id not in valid_customers:
+                stub_cust = Customer(
+                    id=c_id,
+                    name=i_data.get("nama_pelanggan", "Unknown (Deleted)"),
+                    address=i_data.get("alamat", ""),
+                    status="deleted",
+                    is_online=False,
+                    last_synced_at=datetime.utcnow()
+                )
+                db.add(stub_cust)
+                valid_customers.add(c_id)
+                db.flush()
+                
+            inv = db.query(Invoice).filter(
+                Invoice.customer_id == c_id,
+                Invoice.period == period_date
+            ).first()
                 
             if not inv:
                 inv = Invoice()
@@ -219,7 +226,7 @@ def run_sync():
                 yyyymm = period_date.strftime("%Y%m")
                 inv.code = f"INV-{yyyymm}-{c_id}"
                 db.add(inv)
-                added_invoices[dict_key] = inv # Track it so we don't add it again in this loop
+                db.flush() # Force ID generation and session awareness immediately
                 
             inv.amount = i_data.get("nominal_harus_dibayar", 0)
             status_raw = i_data.get("status_pembayaran", "").lower()
