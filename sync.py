@@ -127,8 +127,12 @@ def run_sync():
             if "," in geo_str:
                 parts = geo_str.split(",")
                 try:
-                    lat = float(parts[0].strip())
-                    lng = float(parts[1].strip())
+                    parsed_lat = float(parts[0].strip())
+                    parsed_lng = float(parts[1].strip())
+                    # Validate bounds to prevent DB out of range errors
+                    if -90 <= parsed_lat <= 90 and -180 <= parsed_lng <= 180:
+                        lat = parsed_lat
+                        lng = parsed_lng
                 except: pass
 
             due_day_str = p_data.get("jatuh_tempo", "")
