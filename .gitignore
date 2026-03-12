@@ -8,3 +8,7 @@ cookies.txt
 *.xls
 migration_data/*.json
 migration_data/
+venv/
+.pytest_cache/
+ebilling_scrape.db
+wait_sync.py
