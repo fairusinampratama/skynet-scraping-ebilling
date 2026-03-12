@@ -23,10 +23,12 @@ def scheduled_sync_job():
     except Exception as e:
         logger.error(f"Scheduled sync failed: {e}")
 
+# Global scheduler instance
+scheduler = BackgroundScheduler()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Setup background scheduler
-    scheduler = BackgroundScheduler()
     scrape_hour = int(os.environ.get("SCRAPE_HOUR", 0))  # Default: Midnight
     
     scheduler.add_job(
@@ -151,6 +153,33 @@ def get_branches(db: Session = Depends(get_db)):
 @app.get("/api/v1/sync/logs")
 def get_sync_logs(limit: int = 10, db: Session = Depends(get_db)):
     return db.query(SyncLog).order_by(SyncLog.id.desc()).limit(limit).all()
+
+@app.get("/api/v1/status")
+def get_status():
+    from datetime import datetime
+    
+    now = datetime.now()
+    now_utc = datetime.utcnow()
+    
+    jobs = []
+    try:
+        for job in scheduler.get_jobs():
+            jobs.append({
+                "id": job.id,
+                "next_run_time": str(job.next_run_time) if job.next_run_time else None,
+                "trigger": str(job.trigger)
+            })
+    except:
+        pass
+        
+    return {
+        "status": "online",
+        "server_time_local": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "server_time_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
+        "scrape_hour_config": int(os.environ.get("SCRAPE_HOUR", 0)),
+        "timezone": str(datetime.now().astimezone().tzinfo),
+        "scheduled_jobs": jobs
+    }
 
 @app.post("/api/v1/sync/trigger")
 def trigger_sync(db: Session = Depends(get_db), api_key: str = Depends(verify_api_key)):
