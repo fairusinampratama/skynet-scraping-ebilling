@@ -92,52 +92,52 @@ class SkynetScraper:
             return []
 
     def fetch_data_ipl(self, year=None, month="Semua"):
-        """Fetch Data IPL (Payment) data."""
+        """Fetch Data IPL (Payment) data over all 12 months using tgl1 padding."""
         logger.info(f"Fetching Data IPL for Year: {year}, Month: {month}...")
         
-        # We must use the Export URL because the UI table ignores the year parameter entirely
-        # The IDs here appear static to the account (2867). If they change, this needs dynamic extraction.
-        # It accepts tgl2=YYYY to filter by year.
         base_export_url = "https://e.ebilling.id/billing/admin/ipl/data_ipl.php?&data_account=2867&id_sales=787&id_lokasi=1226&data_level=Administrator"
-        url = f"{base_export_url}&tgl2={year}" if year else base_export_url
-            
-        try:
-            res = self.session.get(url, verify=False)
-            res.raise_for_status()
-            html = res.text
-            
-            rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
-            data = []
-            for row in rows:
-                cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
-                # the export table has 23 columns. Skip headers or weird rows.
-                if len(cols) < 22: continue
-
-                try:
-                    id_pel = utils.clean_html_text(cols[1])
-                    if not id_pel or "ID Pelanggan" in id_pel or id_pel == "N/A": continue
-                    
-                    record = {
-                        "id_pelanggan": id_pel,
-                        "nama_pelanggan": utils.clean_html_text(cols[3]),
-                        "alamat": utils.clean_html_text(cols[6]),
-                        "nominal_harus_dibayar": utils.parse_price(utils.clean_html_text(cols[9])),
-                        "nominal_pembayaran": utils.parse_price(utils.clean_html_text(cols[10])),
-                        "status_pembayaran": utils.clean_html_text(cols[11]),
-                        "bukti_pembayaran_url": "", # Export doesn't include images
-                        "periode": utils.clean_html_text(cols[13]),
-                        "metode": utils.clean_html_text(cols[14]),
-                        "waktu_entry": utils.clean_html_text(cols[16]) if len(cols) > 16 else ""
-                    }
-                    data.append(record)
-                except Exception as e:
-                    pass
+        
+        all_data = []
+        months = [f"{i:02d}" for i in range(1, 13)] if month == "Semua" else [month]
+        
+        for m in months:
+            url = f"{base_export_url}&tgl1={m}"
+            if year:
+                url += f"&tgl2={year}"
                 
-            logger.info(f"   [+] Parsed {len(data)} IPL records from Export.")
-            return data
-        except Exception as e:
-            logger.error(f"   [!] Error fetching IPL Export: {e}")
-            return []
+            try:
+                res = self.session.get(url, verify=False)
+                res.raise_for_status()
+                html = res.text
+                
+                rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
+                for row in rows:
+                    cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                    if len(cols) < 22: continue
+
+                    try:
+                        id_pel = utils.clean_html_text(cols[1])
+                        if not id_pel or "ID Pelanggan" in id_pel or id_pel == "N/A": continue
+                        
+                        record = {
+                            "id_pelanggan": id_pel,
+                            "nama_pelanggan": utils.clean_html_text(cols[3]),
+                            "alamat": utils.clean_html_text(cols[6]),
+                            "nominal_harus_dibayar": utils.parse_price(utils.clean_html_text(cols[9])),
+                            "nominal_pembayaran": utils.parse_price(utils.clean_html_text(cols[10])),
+                            "status_pembayaran": utils.clean_html_text(cols[11]),
+                            "bukti_pembayaran_url": "",
+                            "periode": utils.clean_html_text(cols[13]),
+                            "metode": utils.clean_html_text(cols[14]),
+                            "waktu_entry": utils.clean_html_text(cols[16]) if len(cols) > 16 else ""
+                        }
+                        all_data.append(record)
+                    except Exception: pass
+            except Exception as e:
+                logger.error(f"   [!] Error fetching IPL Export for month {m}: {e}")
+                
+        logger.info(f"   [+] Parsed {len(all_data)} IPL records from Export across {len(months)} months.")
+        return all_data
 
     def fetch_data_warga(self):
         """Fetch Data Warga."""
