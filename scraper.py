@@ -98,7 +98,7 @@ class SkynetScraper:
         # We must use the Export URL because the UI table ignores the year parameter entirely
         # The IDs here appear static to the account (2867). If they change, this needs dynamic extraction.
         # It accepts tgl2=YYYY to filter by year.
-        base_export_url = "https://e.ebilling.id/billing/admin/ipl/data_ipl.php?&data_account=2867&id_sales=787&id_lokasi=1226&data_level=Administrator&tgl1=03"
+        base_export_url = "https://e.ebilling.id/billing/admin/ipl/data_ipl.php?&data_account=2867&id_sales=787&id_lokasi=1226&data_level=Administrator"
         url = f"{base_export_url}&tgl2={year}" if year else base_export_url
             
         try:
