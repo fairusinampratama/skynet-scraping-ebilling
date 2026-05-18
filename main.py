@@ -56,6 +56,31 @@ def verify_api_key(api_key: str = Header(None)):
     if api_key != ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
+def serialize_customer(c: Customer):
+    area = {"id": c.area.id, "code": c.area.code, "name": c.area.name} if c.area else None
+    router_name = c.area.code if c.area else None
+
+    return {
+        "id": c.id,
+        "code": c.code,
+        "name": c.name,
+        "nik": c.nik,
+        "address": c.address,
+        "phone": c.phone,
+        "geo_lat": c.geo_lat,
+        "geo_long": c.geo_long,
+        "pppoe_user": c.pppoe_user,
+        "router_name": router_name,
+        "nama_router": router_name,
+        "status": c.status,
+        "join_date": c.join_date,
+        "due_day": c.due_day,
+        "is_online": c.is_online,
+        "ktp_photo_url": c.ktp_photo_url,
+        "package": {"id": c.package.id, "name": c.package.name, "price": c.package.price} if c.package else None,
+        "area": area
+    }
+
 @app.get("/api/v1/areas")
 def get_areas(db: Session = Depends(get_db)):
     return db.query(Area).all()
@@ -79,29 +104,8 @@ def get_customers(
     if package_id:
         query = query.filter(Customer.package_id == package_id)
         
-    # Return relationships manually crafted for JSON serialization
     customers = query.all()
-    results = []
-    for c in customers:
-        results.append({
-            "id": c.id,
-            "code": c.code,
-            "name": c.name,
-            "nik": c.nik,
-            "address": c.address,
-            "phone": c.phone,
-            "geo_lat": c.geo_lat,
-            "geo_long": c.geo_long,
-            "pppoe_user": c.pppoe_user,
-            "status": c.status,
-            "join_date": c.join_date,
-            "due_day": c.due_day,
-            "is_online": c.is_online,
-            "ktp_photo_url": c.ktp_photo_url,
-            "package": {"id": c.package.id, "name": c.package.name, "price": c.package.price} if c.package else None,
-            "area": {"id": c.area.id, "code": c.area.code, "name": c.area.name} if c.area else None
-        })
-    return results
+    return [serialize_customer(c) for c in customers]
 
 @app.get("/api/v1/customers/{customer_id}")
 def get_customer(customer_id: str, db: Session = Depends(get_db)):
@@ -109,24 +113,7 @@ def get_customer(customer_id: str, db: Session = Depends(get_db)):
     if not c:
         raise HTTPException(status_code=404, detail="Customer not found")
         
-    return {
-        "id": c.id,
-        "code": c.code,
-        "name": c.name,
-        "nik": c.nik,
-        "address": c.address,
-        "phone": c.phone,
-        "geo_lat": c.geo_lat,
-        "geo_long": c.geo_long,
-        "pppoe_user": c.pppoe_user,
-        "status": c.status,
-        "join_date": c.join_date,
-        "due_day": c.due_day,
-        "is_online": c.is_online,
-        "ktp_photo_url": c.ktp_photo_url,
-        "package": {"id": c.package.id, "name": c.package.name, "price": c.package.price} if c.package else None,
-        "area": {"id": c.area.id, "code": c.area.code, "name": c.area.name} if c.area else None
-    }
+    return serialize_customer(c)
 
 @app.get("/api/v1/invoices")
 def get_invoices(
