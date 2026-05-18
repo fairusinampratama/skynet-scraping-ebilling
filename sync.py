@@ -1,6 +1,7 @@
 import sys
 import uuid
 import logging
+import re
 from datetime import datetime
 from database import engine, Base, SessionLocal
 from models import Area, Package, Customer, Invoice, Branch, SyncLog
@@ -49,6 +50,37 @@ def parse_period_to_date(period_str):
         if m and year.isdigit():
             return datetime(int(year), m, 1).date()
     return None
+
+def parse_coordinates(coord_str):
+    if not coord_str:
+        return None, None
+
+    geo_str = str(coord_str).strip()
+    if not geo_str or geo_str in {"0", "-"}:
+        return None, None
+
+    candidates = []
+    if "," in geo_str:
+        left, right = geo_str.split(",", 1)
+        candidates.append((left.strip(), right.strip()))
+
+        # Some exports use "." between latitude and longitude, then "," as
+        # the longitude decimal separator: -7.225190.112,36.
+        match = re.match(r"^\s*(-?\d+\.\d+)\.(\d{2,3}),(\d+)\s*$", geo_str)
+        if match:
+            candidates.insert(0, (match.group(1), f"{match.group(2)}.{match.group(3)}"))
+
+    for lat_raw, lng_raw in candidates:
+        try:
+            parsed_lat = float(lat_raw.replace(",", "."))
+            parsed_lng = float(lng_raw.replace(",", "."))
+        except ValueError:
+            continue
+
+        if -90 <= parsed_lat <= 90 and -180 <= parsed_lng <= 180:
+            return parsed_lat, parsed_lng
+
+    return None, None
 
 def run_sync():
     logger.info("Starting eBilling nightly sync...")
@@ -103,8 +135,8 @@ def run_sync():
                 pkg_id = pkg.id
             
             # Handle Area
-            area_name = p_data.get("nama_lokasi")
-            area_code = p_data.get("nama_router")
+            area_name = p_data.get("nama_lokasi") or p_data.get("nama_router")
+            area_code = p_data.get("nama_router") or p_data.get("nama_lokasi")
             
             area_id = None
             if area_name:
@@ -122,18 +154,7 @@ def run_sync():
             c_id = p_data.get("id_pelanggan")
             if not c_id: continue
             
-            geo_str = str(p_data.get("koordinat", ""))
-            lat, lng = None, None
-            if "," in geo_str:
-                parts = geo_str.split(",")
-                try:
-                    parsed_lat = float(parts[0].strip())
-                    parsed_lng = float(parts[1].strip())
-                    # Validate bounds to prevent DB out of range errors
-                    if -90 <= parsed_lat <= 90 and -180 <= parsed_lng <= 180:
-                        lat = parsed_lat
-                        lng = parsed_lng
-                except: pass
+            lat, lng = parse_coordinates(p_data.get("koordinat", ""))
 
             due_day_str = p_data.get("jatuh_tempo", "")
             due_day = None
@@ -157,8 +178,7 @@ def run_sync():
             cust.package_id = pkg_id
             cust.area_id = area_id
             cust.status = p_data.get("connection_status").lower()
-            if cust.status == "active":
-                cust.is_online = True
+            cust.is_online = cust.status == "active"
                 
             cust.join_date = parse_date(p_data.get("tanggal_registrasi"))
             cust.due_day = due_day

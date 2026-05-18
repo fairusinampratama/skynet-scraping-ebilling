@@ -7,6 +7,27 @@ import utils
 
 logger = logging.getLogger(__name__)
 
+def _normalize_header(text):
+    return re.sub(r'\s+', ' ', utils.clean_html_text(text)).strip().lower()
+
+def _extract_cells(row, tag):
+    return re.findall(rf'<{tag}[^>]*>(.*?)</{tag}>', row, re.DOTALL)
+
+def _build_header_index(rows):
+    for row in rows:
+        headers = _extract_cells(row, "th")
+        if headers:
+            return {_normalize_header(header): idx for idx, header in enumerate(headers)}
+    return {}
+
+def _column(cols, header_index, header, fallback_idx=None):
+    idx = header_index.get(_normalize_header(header))
+    if idx is None:
+        idx = fallback_idx
+    if idx is None or idx >= len(cols):
+        return ""
+    return utils.clean_html_text(cols[idx])
+
 class SkynetScraper:
     def __init__(self):
         self.session = requests.Session()
@@ -148,45 +169,47 @@ class SkynetScraper:
             html = res.text
             
             rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
+            header_index = _build_header_index(rows)
             data = []
             for row in rows:
-                cols = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+                cols = _extract_cells(row, "td")
                 if len(cols) < 20: continue 
 
                 try:
-                    id_pel = utils.clean_html_text(cols[3])
+                    id_pel = _column(cols, header_index, "ID Pelanggan", 3)
                     if not id_pel or "ID Pelanggan" in id_pel: continue
                     
-                    tanggal_registrasi = utils.clean_html_text(cols[4]) if len(cols) > 4 else ""
-                    jatuh_tempo = utils.clean_html_text(cols[22]) if len(cols) > 22 else ""
+                    tanggal_registrasi = _column(cols, header_index, "Tanggal Registrasi", 4)
+                    jatuh_tempo = _column(cols, header_index, "Jatuh Tempo", 22)
                     
-                    nik = utils.clean_html_text(cols[12]) if len(cols) > 12 else ""
+                    nik = _column(cols, header_index, "No ID Identitas", 12)
                     kk = "" 
                     
-                    pppoe_user = utils.clean_html_text(cols[25]) if len(cols) > 25 else ""
-                    pppoe_pass = utils.clean_html_text(cols[26]) if len(cols) > 26 else ""
-                    nama_lokasi = utils.clean_html_text(cols[27]) if len(cols) > 27 else ""
-                    nama_router = utils.clean_html_text(cols[29]) if len(cols) > 29 else ""
-                    koordinat = utils.clean_html_text(cols[35]) if len(cols) > 35 else ""
+                    pppoe_user = _column(cols, header_index, "IP / Secret", 28)
+                    pppoe_pass = _column(cols, header_index, "Password Secret", 29)
+                    nama_lokasi = _column(cols, header_index, "Nama Lokasi", 30)
+                    nama_router = _column(cols, header_index, "Nama Router", 32)
+                    koordinat = _column(cols, header_index, "Titik Koordinat Lokasi", 38)
                     
                     ktp_url = ""
-                    if len(cols) > 13:
-                        raw_col_13 = cols[13]
-                        src_match = re.search(r'src="([^"]+)"', raw_col_13)
+                    ktp_idx = header_index.get(_normalize_header("Foto KTP"), 13)
+                    if ktp_idx < len(cols):
+                        raw_ktp_col = cols[ktp_idx]
+                        src_match = re.search(r'src="([^"]+)"', raw_ktp_col)
                         if src_match:
                             ktp_url = src_match.group(1)
                         else:
-                            ktp_url = utils.clean_html_text(raw_col_13)
+                            ktp_url = utils.clean_html_text(raw_ktp_col)
 
                     record = {
                         "id_pelanggan": id_pel,
-                        "nama_pelanggan": utils.clean_html_text(cols[5]),
+                        "nama_pelanggan": _column(cols, header_index, "Nama Pelanggan", 5),
                         "nik": nik,
                         "kk": kk,
-                        "alamat": utils.clean_html_text(cols[9]),
-                        "telepon": utils.clean_html_text(cols[10]),
-                        "paket": utils.clean_html_text(cols[15]),
-                        "harga": utils.parse_price(utils.clean_html_text(cols[18])),
+                        "alamat": _column(cols, header_index, "Alamat", 9),
+                        "telepon": _column(cols, header_index, "Tlp", 10),
+                        "paket": _column(cols, header_index, "Nama Langganan", 15),
+                        "harga": utils.parse_price(_column(cols, header_index, "Harga", 18)),
                         "tanggal_registrasi": tanggal_registrasi,
                         "jatuh_tempo": jatuh_tempo,
                         "pppoe_username": pppoe_user,

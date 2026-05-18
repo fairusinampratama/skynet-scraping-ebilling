@@ -1,4 +1,4 @@
-from sync import parse_date, parse_period_to_date
+from sync import parse_coordinates, parse_date, parse_period_to_date
 import datetime
 
 def test_parse_date():
@@ -34,3 +34,14 @@ def test_parse_period_to_date():
 def test_parse_period_to_date_invalid():
     assert parse_period_to_date(None) is None
     assert parse_period_to_date("BulanDepan 2026") is None
+
+def test_parse_coordinates_standard_decimal_pair():
+    assert parse_coordinates("-8.0169796,112.6337598") == (-8.0169796, 112.6337598)
+
+def test_parse_coordinates_mixed_decimal_separators():
+    assert parse_coordinates("-7.225190.112,36") == (-7.225190, 112.36)
+    assert parse_coordinates("-7.8726040.112,7238050") == (-7.8726040, 112.7238050)
+
+def test_parse_coordinates_invalid():
+    assert parse_coordinates("0") == (None, None)
+    assert parse_coordinates("-7.858923") == (None, None)
