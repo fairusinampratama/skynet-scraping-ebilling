@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Default to SQLite for local development/testing if DB env vars not present,
@@ -20,6 +20,17 @@ engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+def ensure_runtime_schema():
+    """Apply small additive schema fixes for deployments without migrations."""
+    inspector = inspect(engine)
+    if "customers" not in inspector.get_table_names():
+        return
+
+    customer_columns = {column["name"] for column in inspector.get_columns("customers")}
+    if "source" not in customer_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE customers ADD COLUMN source VARCHAR(50) NOT NULL DEFAULT 'warga'"))
 
 def get_db():
     db = SessionLocal()

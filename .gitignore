@@ -9,6 +9,7 @@ cookies.txt
 migration_data/*.json
 migration_data/
 venv/
+.venv/
 .pytest_cache/
 ebilling_scrape.db
 wait_sync.py
