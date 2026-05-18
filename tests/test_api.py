@@ -42,7 +42,8 @@ def populate_test_db():
     
     cust = Customer(
         id="CUST_001", code="C01", name="Test Customer",
-        status="active", is_online=True,
+        status="active", is_online=True, pppoe_user="CUST_SECRET",
+        source="warga",
         package_id=pkg.id, area_id=area.id
     )
     db.add(cust)
@@ -79,6 +80,8 @@ def test_customers_payload_schema():
     assert cust["area"]["code"] == "T_CODE"
     assert cust["router_name"] == "T_CODE"
     assert cust["nama_router"] == "T_CODE"
+    assert cust["source"] == "warga"
+    assert cust["is_mikrotik_syncable"] is True
 
 def test_customer_detail_payload_includes_router_aliases():
     populate_test_db()
@@ -88,6 +91,38 @@ def test_customer_detail_payload_includes_router_aliases():
     cust = response.json()
     assert cust["router_name"] == "T_CODE"
     assert cust["nama_router"] == "T_CODE"
+
+def test_customers_can_filter_mikrotik_syncable():
+    from models import Area, Package, Customer
+
+    db = TestingSessionLocal()
+    area = Area(name="TEST_AREA", code="T_CODE")
+    pkg = Package(name="TEST_PKG", price=10000)
+    db.add(area)
+    db.add(pkg)
+    db.flush()
+
+    db.add(Customer(
+        id="SYNCABLE", code="SYNCABLE", name="Syncable",
+        status="active", is_online=True, pppoe_user="SYNC_SECRET",
+        source="warga", package_id=pkg.id, area_id=area.id
+    ))
+    db.add(Customer(
+        id="STUB", code="STUB", name="Stub",
+        status="deleted", is_online=False, source="invoice_stub"
+    ))
+    db.add(Customer(
+        id="NO_SECRET", code="NO_SECRET", name="No Secret",
+        status="active", is_online=True, pppoe_user="",
+        source="warga", package_id=pkg.id, area_id=area.id
+    ))
+    db.commit()
+    db.close()
+
+    response = client.get("/api/v1/customers?mikrotik_syncable=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert [customer["id"] for customer in data] == ["SYNCABLE"]
 
 def test_sync_trigger_auth_denied():
     response = client.post("/api/v1/sync/trigger")

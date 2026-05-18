@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 
-from database import engine, get_db, Base
+from database import engine, get_db, Base, ensure_runtime_schema
 from models import Area, Package, Customer, Invoice, Branch, SyncLog
 import sync
 
@@ -12,9 +12,6 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 
 logger = logging.getLogger("api")
-
-# Create tables if not exist (mostly for local sqlite testing)
-Base.metadata.create_all(bind=engine)
 
 def scheduled_sync_job():
     logger.info("Running scheduled eBilling sync job...")
@@ -28,6 +25,10 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create/upgrade tables at runtime so imports stay side-effect-light.
+    Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
+
     # Setup background scheduler
     scrape_hour = int(os.environ.get("SCRAPE_HOUR", 0))  # Default: Midnight
     
@@ -59,6 +60,12 @@ def verify_api_key(api_key: str = Header(None)):
 def serialize_customer(c: Customer):
     area = {"id": c.area.id, "code": c.area.code, "name": c.area.name} if c.area else None
     router_name = c.area.code if c.area else None
+    source = c.source or "warga"
+    is_mikrotik_syncable = (
+        source == "warga"
+        and bool(c.pppoe_user and c.pppoe_user.strip())
+        and bool(router_name and router_name.strip())
+    )
 
     return {
         "id": c.id,
@@ -72,6 +79,8 @@ def serialize_customer(c: Customer):
         "pppoe_user": c.pppoe_user,
         "router_name": router_name,
         "nama_router": router_name,
+        "source": source,
+        "is_mikrotik_syncable": is_mikrotik_syncable,
         "status": c.status,
         "join_date": c.join_date,
         "due_day": c.due_day,
@@ -94,6 +103,7 @@ def get_customers(
     status: Optional[str] = None,
     area_id: Optional[int] = None,
     package_id: Optional[int] = None,
+    mikrotik_syncable: Optional[bool] = None,
     db: Session = Depends(get_db)
 ):
     query = db.query(Customer)
@@ -104,8 +114,14 @@ def get_customers(
     if package_id:
         query = query.filter(Customer.package_id == package_id)
         
-    customers = query.all()
-    return [serialize_customer(c) for c in customers]
+    customers = [serialize_customer(c) for c in query.all()]
+    if mikrotik_syncable is not None:
+        customers = [
+            customer
+            for customer in customers
+            if customer["is_mikrotik_syncable"] is mikrotik_syncable
+        ]
+    return customers
 
 @app.get("/api/v1/customers/{customer_id}")
 def get_customer(customer_id: str, db: Session = Depends(get_db)):

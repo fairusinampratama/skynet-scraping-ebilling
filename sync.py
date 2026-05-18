@@ -3,7 +3,7 @@ import uuid
 import logging
 import re
 from datetime import datetime
-from database import engine, Base, SessionLocal
+from database import engine, Base, SessionLocal, ensure_runtime_schema
 from models import Area, Package, Customer, Invoice, Branch, SyncLog
 from scraper import SkynetScraper
 
@@ -87,6 +87,7 @@ def run_sync():
     
     # Init DB
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
     db = SessionLocal()
     
     sync_log = SyncLog(started_at=datetime.utcnow(), status="running")
@@ -175,6 +176,7 @@ def run_sync():
             cust.geo_long = lng
             cust.pppoe_user = p_data.get("pppoe_username")
             cust.pppoe_password = p_data.get("pppoe_password")
+            cust.source = "warga"
             cust.package_id = pkg_id
             cust.area_id = area_id
             cust.status = p_data.get("connection_status").lower()
@@ -184,6 +186,12 @@ def run_sync():
             cust.due_day = due_day
             cust.ktp_photo_url = p_data.get("ktp_photo_url")
             cust.last_synced_at = datetime.utcnow()
+
+        if processed_customers:
+            db.query(Customer).filter(
+                Customer.source == "warga",
+                ~Customer.id.in_(list(processed_customers))
+            ).update({"source": "stale"}, synchronize_session=False)
             
         db.commit()
         sync_log.customers_synced = len(warga_data)
@@ -225,6 +233,7 @@ def run_sync():
                     name=i_data.get("nama_pelanggan", "Unknown (Deleted)"),
                     address=i_data.get("alamat", ""),
                     status="deleted",
+                    source="invoice_stub",
                     is_online=False,
                     last_synced_at=datetime.utcnow()
                 )

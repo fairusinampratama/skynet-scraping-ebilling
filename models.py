@@ -42,6 +42,7 @@ class Customer(Base):
     
     pppoe_user = Column(String(100), nullable=True)
     pppoe_password = Column(String(100), nullable=True)
+    source = Column(String(50), nullable=False, default="warga", server_default="warga")
     
     package_id = Column(Integer, ForeignKey("packages.id"), nullable=True)
     area_id = Column(Integer, ForeignKey("areas.id"), nullable=True)
