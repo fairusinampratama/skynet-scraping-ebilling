@@ -77,6 +77,17 @@ def test_customers_payload_schema():
     assert "area" in cust
     assert cust["area"]["name"] == "TEST_AREA"
     assert cust["area"]["code"] == "T_CODE"
+    assert cust["router_name"] == "T_CODE"
+    assert cust["nama_router"] == "T_CODE"
+
+def test_customer_detail_payload_includes_router_aliases():
+    populate_test_db()
+    response = client.get("/api/v1/customers/CUST_001")
+    assert response.status_code == 200
+
+    cust = response.json()
+    assert cust["router_name"] == "T_CODE"
+    assert cust["nama_router"] == "T_CODE"
 
 def test_sync_trigger_auth_denied():
     response = client.post("/api/v1/sync/trigger")
