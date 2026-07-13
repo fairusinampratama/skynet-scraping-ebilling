@@ -1,67 +1,37 @@
-# Skynet Migration Data
+# Skynet E-Billing Migration Utilities
 
-This folder contains the cleaned data extracted from the legacy e-billing system, ready for import into the new database.
+Utilities for extracting, cleaning, and preparing legacy ISP billing data for migration into the newer Skynet E-Billing system.
 
-## 📂 File Structure
+## Security Notice
 
-- **`customers_final.json`**: **USE THIS FOR IMPORT** - Final cleaned data (1,743 records, sanitized coordinates)
-- `customers_clean.json`: Deduplicated but with unsanitized coordinates
-- `customers.json`: Original export with duplicates
-- `transactions.json`: Payment history (from "Data IPL")
-- `branches.json`: Branch financial summaries (from "Dashboard Cabang")
+Real migration exports are intentionally excluded from this repository. Customer records, identity numbers, phone numbers, addresses, coordinates, router account data, payment history, uploaded document URLs, cookies, local databases, and generated exports must remain outside Git.
 
-## 🔄 Mapping Guide for Migration
+The current branch is suitable for documenting the migration workflow only. If real data is ever committed, treat it as a security incident: remove it from the current branch, purge it from Git history, and rotate any exposed credentials.
 
-### 1. Table: `customers`
-Source: `customers.json`
+## Repository Scope
 
-| Destination Column | Source JSON Key | Notes |
-| :--- | :--- | :--- |
-| `id` | `id_pelanggan` | Primary Key (String/Char) |
-| `name` | `nama_pelanggan` | |
-| `address` | `alamat` | |
-| `phone_number` | `telepon` | |
-| `nik` | `nik` | National Identity Number |
-| `kk` | `kk` | Family Card Number |
-| `coordinates` | `koordinat` | Format: "lat,lng" (Needs splitting) |
-| `pppoe_username` | `pppoe_username` | |
-| `pppoe_password` | `pppoe_password` | **Warning**: Often empty in source. |
-| `identity_card_photo_path` | `ktp_photo_url` | URL needs downloading if storing locally. |
-| `is_active` | `connection_status` | "Active" -> true, "Isolated" -> false |
-| `registered_at` | `tanggal_registrasi` | Registration date (e.g., "01-February-2026") |
-| `billing_day` | `jatuh_tempo` | Day of month for bill due date (e.g., "30") |
+This repository is for migration tooling and documentation, not for storing operational data.
 
-### 2. Table: `packages`
-Source: `customers.json` (Derived)
+Expected private/generated artifacts include:
 
-- Extract unique `paket` values from `customers.json`.
-- Map `paket` name AND `harga`.
-- Create new records in `packages` table.
+- `migration_data/*.json`
+- `*.csv`, `*.xls`, `*.xlsx`
+- `.env`
+- `cookies.txt`
+- `*.db`, `*.sqlite`, `*.sql`
+- scraped HTML pages
+- logs and temporary exports
 
-### 3. Table: `routers`
-Source: `customers.json` (Derived)
+These files are ignored by `.gitignore` and should be shared only through approved private channels when legally and operationally required.
 
-- Extract unique `nama_router` values.
-- **Action Required**: You must manually update the `routers` table with IP Address, Username, and Password for each router name found (e.g., "SKYNET-SRIGADING").
+## Safe Migration Workflow
 
-### 4. Table: `invoices` & `transactions`
-Source: `transactions.json`
+1. Export legacy data into a private local working directory.
+2. Clean and validate the data locally.
+3. Replace real records with anonymized fixtures before committing examples.
+4. Import only from the private environment into the target database.
+5. Rotate any credential that appears in a repository, issue, log, artifact, or screenshot.
 
-| Destination Column | Source JSON Key | Notes |
-| :--- | :--- | :--- |
-| `customer_id` | `id_pelanggan` | Foreign Key |
-| `period` | `periode` | e.g., "February 2026" |
-| `amount` | `nominal_harus_dibayar` | |
-| `status` | `status_pembayaran` | "Lunas" -> "paid" |
-| `payment_method` | `metode` | |
-| `proof_of_payment` | `bukti_pembayaran_url` | |
+## Portfolio Note
 
-## 🚀 How to Run the Export
-
-To regenerate these files:
-
-```bash
-python3 export_data.py
-```
-
-This will fetch the latest data and overwrite the files in the `migration_data/` folder.
+This project may be referenced publicly as a migration and data-cleaning utility, but public materials must describe the workflow without exposing customer data or infrastructure secrets.
